@@ -141,13 +141,13 @@ find-links = [
 override-dependencies = ["opencv-python>=4.12.0.88", "pillow>=8.2.0", "pywinpty!=2.0.14; os_name == 'nt'"]
 
 [[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cpu" }]
-torchvision = [{ index = "pytorch-cpu" }]
+torch = [{ index = "pytorch-cu128" }]
+torchvision = [{ index = "pytorch-cu128" }]
 
 [tool.ruff]
 target-version = "py38"
