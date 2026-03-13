@@ -254,17 +254,20 @@ def get_sliced_prediction(
         postprocess_type = "NMS"
 
     # init match postprocess instance
-    if postprocess_type not in POSTPROCESS_NAME_TO_CLASS.keys():
+    if postprocess_type == "NONE":
+        postprocess = None
+    elif postprocess_type not in POSTPROCESS_NAME_TO_CLASS.keys():
         raise ValueError(
-            f"postprocess_type should be one of {list(POSTPROCESS_NAME_TO_CLASS.keys())} "
+            f"postprocess_type should be one of {list(POSTPROCESS_NAME_TO_CLASS.keys()) + ['NONE']} "
             f"but given as {postprocess_type}"
         )
-    postprocess_constructor = POSTPROCESS_NAME_TO_CLASS[postprocess_type]
-    postprocess = postprocess_constructor(
-        match_threshold=postprocess_match_threshold,
-        match_metric=postprocess_match_metric,
-        class_agnostic=postprocess_class_agnostic,
-    )
+    else:
+        postprocess_constructor = POSTPROCESS_NAME_TO_CLASS[postprocess_type]
+        postprocess = postprocess_constructor(
+            match_threshold=postprocess_match_threshold,
+            match_metric=postprocess_match_metric,
+            class_agnostic=postprocess_class_agnostic,
+        )
 
     postprocess_time = 0
     time_start = time.perf_counter()
@@ -342,7 +345,7 @@ def get_sliced_prediction(
                     object_prediction_list.append(object_prediction.get_shifted_object_prediction())
 
         # merge matching predictions during sliced prediction
-        if merge_buffer_length is not None and len(object_prediction_list) > merge_buffer_length:
+        if postprocess is not None and merge_buffer_length is not None and len(object_prediction_list) > merge_buffer_length:
             postprocess_time_start = time.time()
             object_prediction_list = postprocess(object_prediction_list)
             postprocess_time += time.time() - postprocess_time_start
@@ -368,7 +371,7 @@ def get_sliced_prediction(
         object_prediction_list.extend(prediction_result.object_prediction_list)
 
     # merge matching predictions
-    if len(object_prediction_list) > 1:
+    if postprocess is not None and len(object_prediction_list) > 1:
         postprocess_time_start = time.time()
         object_prediction_list = postprocess(object_prediction_list)
         postprocess_time += time.time() - postprocess_time_start

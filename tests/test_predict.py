@@ -526,6 +526,86 @@ def test_ultralytics_yolo11n_prediction():
     )
 
 
+class TestNonePostprocessType:
+    """Test that postprocess_type='NONE' skips merging."""
+
+    def test_none_postprocess_accepted_by_validation(self):
+        """postprocess_type='NONE' should not raise ValueError."""
+        import numpy as np
+        from unittest.mock import MagicMock
+        from sahi.predict import get_sliced_prediction
+
+        mock_model = MagicMock()
+        mock_model.confidence_threshold = 0.3
+        mock_model.category_mapping = {"0": "crack"}
+        mock_model._object_prediction_list_per_image = [[]]
+        mock_model.perform_inference = MagicMock()
+        mock_model._create_object_prediction_list_from_original_predictions = MagicMock()
+
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        # Should NOT raise ValueError for "NONE"
+        try:
+            result = get_sliced_prediction(
+                image=image,
+                detection_model=mock_model,
+                slice_height=50,
+                slice_width=50,
+                overlap_height_ratio=0.0,
+                overlap_width_ratio=0.0,
+                postprocess_type="NONE",
+                verbose=0,
+            )
+        except ValueError as e:
+            if "postprocess_type" in str(e):
+                raise AssertionError(
+                    f"NONE postprocess_type should be accepted but got: {e}"
+                )
+            raise  # Re-raise if it's a different ValueError
+
+    def test_none_postprocess_preserves_all_predictions(self):
+        """NONE should return overlapping predictions without merging them."""
+        import numpy as np
+        from unittest.mock import MagicMock
+        from sahi.predict import get_sliced_prediction
+        from sahi.prediction import ObjectPrediction
+
+        # Two overlapping predictions that would normally be merged
+        pred1 = ObjectPrediction(
+            bbox=[10, 10, 50, 50], category_id=0, score=0.9,
+            category_name="crack", shift_amount=[0, 0], full_shape=[100, 100],
+        )
+        pred2 = ObjectPrediction(
+            bbox=[15, 15, 55, 55], category_id=0, score=0.85,
+            category_name="crack", shift_amount=[0, 0], full_shape=[100, 100],
+        )
+
+        mock_model = MagicMock()
+        mock_model.confidence_threshold = 0.3
+        mock_model.category_mapping = {"0": "crack"}
+
+        # get_prediction calls convert_original_predictions then reads
+        # detection_model.object_prediction_list (single-image property).
+        # Set up the mock so that property returns both predictions.
+        mock_model.object_prediction_list = [pred1, pred2]
+
+        image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+        result = get_sliced_prediction(
+            image=image,
+            detection_model=mock_model,
+            slice_height=100,
+            slice_width=100,
+            overlap_height_ratio=0.0,
+            overlap_width_ratio=0.0,
+            postprocess_type="NONE",
+            verbose=0,
+        )
+
+        # Both predictions should be preserved (not merged into 1)
+        assert len(result.object_prediction_list) == 2
+
+
 def test_video_prediction():
     # download video file
     source_url = "https://github.com/obss/sahi/releases/download/0.9.2/test.mp4"
