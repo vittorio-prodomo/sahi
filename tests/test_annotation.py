@@ -154,3 +154,143 @@ class TestAnnotation:
         assert object_annotation3.bbox.maxy == bbox[3]
         assert object_annotation3.category.id == category_id
         assert object_annotation3.category.name == category_name
+
+
+class TestMaskBoolMaskCache:
+    """Test that Mask.from_bool_mask preserves the original bool mask."""
+
+    def test_from_bool_mask_stores_cache(self):
+        """from_bool_mask should store _bool_mask on the Mask object."""
+        from sahi.annotation import Mask
+        import numpy as np
+
+        bool_mask = np.zeros((10, 10), dtype=bool)
+        bool_mask[2:5, 3:7] = True
+
+        mask = Mask.from_bool_mask(
+            bool_mask=bool_mask,
+            full_shape=[10, 10],
+            shift_amount=[0, 0],
+        )
+
+        # Cache must be set (not None) and return the exact original
+        assert mask._bool_mask is not None
+        np.testing.assert_array_equal(mask.bool_mask, bool_mask)
+
+    def test_from_bool_mask_returns_exact_original(self):
+        """bool_mask property should return the cached array, not a polygon reconstruction."""
+        from sahi.annotation import Mask
+        import numpy as np
+
+        bool_mask = np.zeros((10, 10), dtype=bool)
+        bool_mask[2:5, 3:7] = True
+
+        mask = Mask.from_bool_mask(
+            bool_mask=bool_mask,
+            full_shape=[10, 10],
+            shift_amount=[0, 0],
+        )
+
+        # Must be the same object (identity check), not just equal values
+        assert mask.bool_mask is bool_mask
+
+    def test_get_shifted_mask_preserves_bool_mask(self):
+        """Shifted mask should place pixels exactly via _bool_mask cache."""
+        from sahi.annotation import Mask
+        import numpy as np
+
+        bool_mask = np.zeros((10, 10), dtype=bool)
+        bool_mask[0:5, 0:5] = True
+
+        mask = Mask.from_bool_mask(
+            bool_mask=bool_mask,
+            full_shape=[30, 30],
+            shift_amount=[10, 5],
+        )
+
+        shifted = mask.get_shifted_mask()
+
+        # Shifted mask must also have _bool_mask set
+        assert shifted._bool_mask is not None
+        # Mask should be placed at (y=5, x=10) in the 30x30 canvas
+        expected = np.zeros((30, 30), dtype=bool)
+        expected[5:10, 10:15] = True
+        np.testing.assert_array_equal(shifted.bool_mask, expected)
+
+    def test_shifted_mask_clips_to_full_shape(self):
+        """Bool mask extending beyond full_shape should be clipped."""
+        from sahi.annotation import Mask
+        import numpy as np
+
+        bool_mask = np.zeros((10, 10), dtype=bool)
+        bool_mask[:] = True
+
+        mask = Mask.from_bool_mask(
+            bool_mask=bool_mask,
+            full_shape=[15, 15],
+            shift_amount=[8, 8],
+        )
+
+        shifted = mask.get_shifted_mask()
+        assert shifted._bool_mask is not None
+        result = shifted.bool_mask
+        assert result.shape == (15, 15)
+        expected = np.zeros((15, 15), dtype=bool)
+        expected[8:15, 8:15] = True
+        np.testing.assert_array_equal(result, expected)
+
+    def test_mask_without_bool_mask_cache_unchanged(self):
+        """Standard Mask construction (from segmentation) should work as before."""
+        from sahi.annotation import Mask
+        from sahi.utils.cv import get_coco_segmentation_from_bool_mask
+        import numpy as np
+
+        bool_mask = np.zeros((10, 10), dtype=bool)
+        bool_mask[2:5, 3:7] = True
+        segmentation = get_coco_segmentation_from_bool_mask(bool_mask)
+
+        # Construct via segmentation (not from_bool_mask) — no cache
+        mask = Mask(
+            segmentation=segmentation,
+            full_shape=[10, 10],
+            shift_amount=[0, 0],
+        )
+
+        assert mask._bool_mask is None
+        # bool_mask property should still work via polygon reconstruction
+        result = mask.bool_mask
+        assert result.shape == (10, 10)
+
+    def test_object_prediction_shifted_preserves_bool_mask(self):
+        """get_shifted_object_prediction should preserve _bool_mask through shifting."""
+        from sahi.prediction import ObjectPrediction
+        from sahi.utils.cv import get_coco_segmentation_from_bool_mask
+        import numpy as np
+
+        # 50x50 slice mask with a 20x20 True block at origin
+        bool_mask = np.zeros((50, 50), dtype=bool)
+        bool_mask[0:20, 0:20] = True
+        segmentation = get_coco_segmentation_from_bool_mask(bool_mask)
+
+        pred = ObjectPrediction(
+            bbox=[0, 0, 20, 20],
+            category_id=0,
+            score=0.9,
+            segmentation=segmentation,
+            category_name="crack",
+            shift_amount=[20, 10],
+            full_shape=[100, 100],
+        )
+        # Attach bool mask cache (as our wrapper does)
+        pred.mask._bool_mask = bool_mask
+
+        shifted = pred.get_shifted_object_prediction()
+
+        # _bool_mask should be preserved on the shifted prediction
+        assert shifted.mask._bool_mask is not None
+        assert shifted.mask._bool_mask.shape == (100, 100)
+        # 50x50 mask placed at (y=10, x=20), True block at [0:20, 0:20]
+        # → canvas[10:30, 20:40] = True
+        expected = np.zeros((100, 100), dtype=bool)
+        expected[10:30, 20:40] = True
+        np.testing.assert_array_equal(shifted.mask.bool_mask, expected)

@@ -211,6 +211,7 @@ class Mask:
         self.full_shape_height = full_shape[0]
         self.full_shape_width = full_shape[1]
         self.segmentation = segmentation
+        self._bool_mask: np.ndarray | None = None
 
     @classmethod
     def from_float_mask(
@@ -256,14 +257,18 @@ class Mask:
                 To shift the box and mask predictions from sliced image to full
                 sized image, should be in the form of [shift_x, shift_y]
         """
-        return cls(
+        mask = cls(
             segmentation=get_coco_segmentation_from_bool_mask(bool_mask),
             shift_amount=shift_amount,
             full_shape=full_shape,
         )
+        mask._bool_mask = bool_mask
+        return mask
 
     @property
     def bool_mask(self) -> np.ndarray:
+        if self._bool_mask is not None:
+            return self._bool_mask
         return get_bool_mask_from_coco_segmentation(
             self.segmentation, width=self.full_shape[1], height=self.full_shape[0]
         )
@@ -292,11 +297,27 @@ class Mask:
             xs = [min(self.shift_x + s[i], self.full_shape_width) for i in range(0, len(s) - 1, 2)]
             ys = [min(self.shift_y + s[i], self.full_shape_height) for i in range(1, len(s), 2)]
             shifted_segmentation.append([j for i in zip(xs, ys) for j in i])
-        return Mask(
+
+        new_mask = Mask(
             segmentation=shifted_segmentation,
             shift_amount=[0, 0],
             full_shape=self.full_shape,
         )
+
+        # Pixel-perfect shift if cached bool mask is available
+        if self._bool_mask is not None:
+            h, w = self._bool_mask.shape
+            canvas = np.zeros(
+                (self.full_shape_height, self.full_shape_width), dtype=bool,
+            )
+            y1 = self.shift_y
+            x1 = self.shift_x
+            y2 = min(y1 + h, self.full_shape_height)
+            x2 = min(x1 + w, self.full_shape_width)
+            canvas[y1:y2, x1:x2] = self._bool_mask[:y2 - y1, :x2 - x1]
+            new_mask._bool_mask = canvas
+
+        return new_mask
 
 
 class ObjectAnnotation:

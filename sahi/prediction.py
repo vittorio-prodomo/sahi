@@ -95,7 +95,7 @@ class ObjectPrediction(ObjectAnnotation):
         """
         if self.mask:
             shifted_mask = self.mask.get_shifted_mask()
-            return ObjectPrediction(
+            pred = ObjectPrediction(
                 bbox=self.bbox.get_shifted_box().to_xyxy(),
                 category_id=self.category.id,
                 score=self.score.value,
@@ -104,6 +104,10 @@ class ObjectPrediction(ObjectAnnotation):
                 shift_amount=[0, 0],
                 full_shape=shifted_mask.full_shape,
             )
+            # Preserve pixel-perfect bool mask cache through shifting
+            if shifted_mask._bool_mask is not None:
+                pred.mask._bool_mask = shifted_mask._bool_mask
+            return pred
         else:
             return ObjectPrediction(
                 bbox=self.bbox.get_shifted_box().to_xyxy(),
