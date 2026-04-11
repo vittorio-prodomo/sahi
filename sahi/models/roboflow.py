@@ -351,17 +351,24 @@ class RoboflowDetectionModel(DetectionModel):
                     original_detection.confidence,
                     original_detection.class_id,
                 ):
-                    segmentation = get_coco_segmentation_from_bool_mask(mask) if mask is not None else None
+                    segmentation = None
+                    if mask is not None:
+                        segmentation = get_coco_segmentation_from_bool_mask(mask)
+                        if not segmentation or len(segmentation) == 0:
+                            continue  # skip degenerate masks
 
-                    object_prediction = ObjectPrediction(
-                        bbox=xyxy,
-                        segmentation=segmentation,
-                        category_id=int(class_id),
-                        category_name=self.category_mapping.get(int(class_id), None) if self.category_mapping else None,
-                        score=float(confidence),
-                        shift_amount=shift_amount,
-                        full_shape=full_shape,
-                    )
+                    try:
+                        object_prediction = ObjectPrediction(
+                            bbox=xyxy,
+                            segmentation=segmentation,
+                            category_id=int(class_id),
+                            category_name=self.category_mapping.get(int(class_id), None) if self.category_mapping else None,
+                            score=float(confidence),
+                            shift_amount=shift_amount,
+                            full_shape=full_shape,
+                        )
+                    except ValueError:
+                        continue  # skip invalid predictions (e.g. degenerate masks)
                     image_predictions.append(object_prediction)
                 object_prediction_list_per_image.append(image_predictions)
 
