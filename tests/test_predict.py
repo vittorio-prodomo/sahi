@@ -1,7 +1,12 @@
+"""Tests for prediction and model inference."""
+
+from __future__ import annotations
+
 import shutil
 import sys
 from collections import Counter
 from os import path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -18,7 +23,8 @@ CONFIDENCE_THRESHOLD = 0.5
 IMAGE_SIZE = 320
 
 
-def test_prediction_score():
+def test_prediction_score() -> None:
+    """Test PredictionScore value and comparison operations."""
     from sahi.prediction import PredictionScore
 
     prediction_score = PredictionScore(np.array(0.6))  # type: ignore
@@ -33,7 +39,8 @@ def test_prediction_score():
 
 
 @pytest.mark.skipif(sys.version_info[:2] != (3, 11), reason="MMDet tests only run on Python 3.11")
-def test_get_prediction_mmdet():
+def test_get_prediction_mmdet() -> None:
+    """Test full-image prediction with MMDet model."""
     # Skip if mmdet is not installed
     pytest.importorskip("mmdet", reason="MMDet is not installed")
     pytest.importorskip("mmcv", reason="MMCV is not installed")
@@ -85,7 +92,8 @@ def test_get_prediction_mmdet():
     assert num_car == 2
 
 
-def test_get_prediction_automodel_yolo11():
+def test_get_prediction_automodel_yolo11() -> None:
+    """Test full-image prediction with auto-loaded YOLO11 model."""
     from sahi.auto_model import AutoDetectionModel
     from sahi.predict import get_prediction
 
@@ -125,7 +133,8 @@ def test_get_prediction_automodel_yolo11():
     assert result_counts["person"] == 0
 
 
-def test_prediction_category_remapping():
+def test_prediction_category_remapping() -> None:
+    """Test category remapping during prediction."""
     from sahi.auto_model import AutoDetectionModel
     from sahi.predict import get_prediction
 
@@ -166,7 +175,8 @@ def test_prediction_category_remapping():
 
 
 @pytest.mark.skipif(sys.version_info[:2] != (3, 11), reason="MMDet tests only run on Python 3.11")
-def test_get_sliced_prediction_mmdet():
+def test_get_sliced_prediction_mmdet() -> None:
+    """Test sliced prediction with MMDet model."""
     # Skip if mmdet is not installed
     pytest.importorskip("mmdet", reason="MMDet is not installed")
     pytest.importorskip("mmcv", reason="MMCV is not installed")
@@ -239,7 +249,8 @@ def test_get_sliced_prediction_mmdet():
     assert num_car == 15
 
 
-def test_get_prediction_yolo11():
+def test_get_prediction_yolo11() -> None:
+    """Test full-image prediction with YOLO11 model."""
     # init model
     download_yolo11n_model()
 
@@ -282,7 +293,8 @@ def test_get_prediction_yolo11():
     assert num_car > 0
 
 
-def test_get_sliced_prediction_yolo11():
+def test_get_sliced_prediction_yolo11() -> None:
+    """Test sliced prediction with YOLO11 model."""
     # init model
     download_yolo11n_model()
 
@@ -343,38 +355,8 @@ def test_get_sliced_prediction_yolo11():
     assert num_car > 0
 
 
-def _serialize_object_prediction_for_comparison(object_prediction):
-    segmentation = None
-    if object_prediction.mask is not None:
-        segmentation = [[round(float(value), 3) for value in segment] for segment in object_prediction.mask.segmentation]
-
-    return {
-        "category_id": object_prediction.category.id,
-        "category_name": object_prediction.category.name,
-        "bbox_xyxy": [round(float(value), 3) for value in object_prediction.bbox.to_xyxy()],
-        "score": round(float(object_prediction.score.value), 3),
-        "segmentation": segmentation,
-    }
-
-
-def _serialize_prediction_list_for_comparison(object_prediction_list):
-    serialized_list = [_serialize_object_prediction_for_comparison(obj_pred) for obj_pred in object_prediction_list]
-    return sorted(
-        serialized_list,
-        key=lambda item: (
-            item["category_id"],
-            item["category_name"],
-            item["bbox_xyxy"][0],
-            item["bbox_xyxy"][1],
-            item["bbox_xyxy"][2],
-            item["bbox_xyxy"][3],
-            item["score"],
-        ),
-    )
-
-
-def test_get_sliced_prediction_batch_size_exact_output():
-    # init model
+def test_get_sliced_prediction_batch_size() -> None:
+    """Test that different batch sizes produce identical results."""
     download_yolo11n_model()
 
     yolo11_detection_model = UltralyticsDetectionModel(
@@ -387,44 +369,48 @@ def test_get_sliced_prediction_batch_size_exact_output():
     )
     yolo11_detection_model.load_model()
 
-    # prepare image
     image_path = "tests/data/small-vehicles1.jpeg"
-
-    common_prediction_kwargs = {
-        "image": image_path,
-        "detection_model": yolo11_detection_model,
-        "slice_height": 512,
-        "slice_width": 512,
-        "overlap_height_ratio": 0.1,
-        "overlap_width_ratio": 0.2,
-        "perform_standard_pred": False,
-        "postprocess_type": "GREEDYNMM",
-        "postprocess_match_threshold": 0.5,
-        "postprocess_match_metric": "IOS",
-        "postprocess_class_agnostic": True,
-    }
-
-    prediction_result_batch_size_1 = get_sliced_prediction(batch_size=1, **common_prediction_kwargs)
-    prediction_result_batch_size_4 = get_sliced_prediction(batch_size=4, **common_prediction_kwargs)
-    prediction_result_batch_size_8 = get_sliced_prediction(batch_size=8, **common_prediction_kwargs)
-
-    serialized_predictions_batch_size_1 = _serialize_prediction_list_for_comparison(
-        prediction_result_batch_size_1.object_prediction_list
-    )
-    serialized_predictions_batch_size_4 = _serialize_prediction_list_for_comparison(
-        prediction_result_batch_size_4.object_prediction_list
-    )
-    serialized_predictions_batch_size_8 = _serialize_prediction_list_for_comparison(
-        prediction_result_batch_size_8.object_prediction_list
+    common_kwargs: dict[str, Any] = dict(
+        image=image_path,
+        detection_model=yolo11_detection_model,
+        slice_height=512,
+        slice_width=512,
+        overlap_height_ratio=0.1,
+        overlap_width_ratio=0.2,
+        perform_standard_pred=False,
+        postprocess_type="GREEDYNMM",
+        postprocess_match_threshold=0.5,
+        postprocess_match_metric="IOS",
+        postprocess_class_agnostic=True,
     )
 
-    assert len(serialized_predictions_batch_size_1) > 0
-    assert serialized_predictions_batch_size_4 == serialized_predictions_batch_size_1
-    assert serialized_predictions_batch_size_8 == serialized_predictions_batch_size_1
+    result_bs1 = get_sliced_prediction(**common_kwargs, batch_size=1)
+    result_bs4 = get_sliced_prediction(**common_kwargs, batch_size=4)
+
+    preds_bs1 = result_bs1.object_prediction_list
+    preds_bs4 = result_bs4.object_prediction_list
+
+    assert len(preds_bs1) > 0, "batch_size=1 should produce predictions"
+    assert len(preds_bs1) == len(preds_bs4), (
+        f"batch_size=1 gave {len(preds_bs1)} predictions, batch_size=4 gave {len(preds_bs4)}"
+    )
+
+    def serialize_pred(pred: Any) -> tuple[Any, ...]:
+        return (
+            pred.category.id,
+            pred.category.name,
+            tuple(round(c, 2) for c in pred.bbox.to_voc_bbox()),
+            round(pred.score.value, 4),
+        )
+
+    set_bs1 = sorted(serialize_pred(p) for p in preds_bs1)
+    set_bs4 = sorted(serialize_pred(p) for p in preds_bs4)
+    assert set_bs1 == set_bs4, "batch_size=1 and batch_size=4 should produce identical predictions"
 
 
 @pytest.mark.skipif(sys.version_info[:2] != (3, 11), reason="MMDet tests only run on Python 3.11")
-def test_mmdet_yolox_tiny_prediction():
+def test_mmdet_yolox_tiny_prediction() -> None:
+    """Test MMDet YOLOX tiny model prediction and export."""
     # Skip if mmdet is not installed
     pytest.importorskip("mmdet", reason="MMDet is not installed")
     pytest.importorskip("mmcv", reason="MMCV is not installed")
@@ -478,7 +464,8 @@ def test_mmdet_yolox_tiny_prediction():
     )
 
 
-def test_ultralytics_yolo11n_prediction():
+def test_ultralytics_yolo11n_prediction() -> None:
+    """Test Ultralytics YOLO11n model prediction and export."""
     from sahi.predict import predict
 
     # init model
@@ -606,7 +593,8 @@ class TestNonePostprocessType:
         assert len(result.object_prediction_list) == 2
 
 
-def test_video_prediction():
+def test_video_prediction() -> None:
+    """Test video file prediction with various configurations."""
     # download video file
     source_url = "https://github.com/obss/sahi/releases/download/0.9.2/test.mp4"
     destination_path = "tests/data/test.mp4"
