@@ -220,13 +220,25 @@ class RoboflowDetectionModel(DetectionModel):
             super().perform_batch_inference(images)
             return
 
+        # Pad last batch if model is JIT-compiled with a fixed batch size
+        compiled_bs = getattr(self.model, "_optimized_batch_size", None)
+        n_real = len(images)
+        if compiled_bs and n_real < compiled_bs:
+            pad_img = np.zeros_like(images[0])
+            images = images + [pad_img] * (compiled_bs - n_real)
+
         results = self.model.predict(images, threshold=self.confidence_threshold)
         # predict() returns a single Detections when given a single image,
         # or a list of Detections when given a list. Normalize to list.
         if not isinstance(results, list):
             results = [results]
+
+        # Strip padding predictions
+        if compiled_bs and n_real < len(results):
+            results = results[:n_real]
+
         self._original_predictions = results
-        self._original_shapes = [img.shape for img in images]
+        self._original_shapes = [img.shape for img in images[:n_real]]
         # Clear _batch_images so convert_original_predictions takes
         # the standard path instead of the sequential fallback.
         self._batch_images = None
