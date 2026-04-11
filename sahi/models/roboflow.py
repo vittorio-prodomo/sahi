@@ -190,7 +190,7 @@ class RoboflowDetectionModel(DetectionModel):
         self,
         image: np.ndarray,
     ) -> None:
-        """Run inference on image and store predictions.
+        """Run inference on a single image and store predictions.
 
         Args:
             image: np.ndarray
@@ -200,6 +200,36 @@ class RoboflowDetectionModel(DetectionModel):
             self._original_predictions = self.model.infer(image, confidence=self.confidence_threshold)
         else:
             self._original_predictions = [self.model.predict(image, threshold=self.confidence_threshold)]
+
+    def perform_batch_inference(self, images: list[np.ndarray]) -> None:
+        """Run inference on a batch of images using native RF-DETR batch support.
+
+        RF-DETR's ``predict()`` accepts a list of images and processes them
+        in a single batched forward pass on the GPU. This override replaces
+        the default sequential fallback with true GPU batching.
+
+        For Roboflow Universe models (API-based), falls back to sequential
+        inference since the API doesn't support batching.
+
+        Args:
+            images: list[np.ndarray]
+                List of numpy arrays (H, W, C) in RGB order.
+        """
+        if self._use_universe:
+            # API-based models don't support batching — use default sequential
+            super().perform_batch_inference(images)
+            return
+
+        results = self.model.predict(images, threshold=self.confidence_threshold)
+        # predict() returns a single Detections when given a single image,
+        # or a list of Detections when given a list. Normalize to list.
+        if not isinstance(results, list):
+            results = [results]
+        self._original_predictions = results
+        self._original_shapes = [img.shape for img in images]
+        # Clear _batch_images so convert_original_predictions takes
+        # the standard path instead of the sequential fallback.
+        self._batch_images = None
 
     @property
     def has_mask(self) -> bool:
@@ -296,11 +326,13 @@ class RoboflowDetectionModel(DetectionModel):
                 "Length mismatch between original responses, shift amounts, and full shapes."
             )
 
+            object_prediction_list_per_image: list[list[ObjectPrediction]] = []
             for original_detection, shift_amount, full_shape in zip(
                 original_detections,
                 shift_amount_list_typed,
                 full_shape_list_typed or [],
             ):
+                image_predictions: list[ObjectPrediction] = []
                 for xyxy, mask, confidence, class_id in zip_longest(
                     original_detection.xyxy,
                     original_detection.mask if original_detection.mask is not None else [],
@@ -318,7 +350,11 @@ class RoboflowDetectionModel(DetectionModel):
                         shift_amount=shift_amount,
                         full_shape=full_shape,
                     )
-                    object_prediction_list.append(object_prediction)
+                    image_predictions.append(object_prediction)
+                object_prediction_list_per_image.append(image_predictions)
+
+            self._object_prediction_list_per_image = object_prediction_list_per_image
+            return
 
         object_prediction_list_per_image = [object_prediction_list]
         self._object_prediction_list_per_image = object_prediction_list_per_image
