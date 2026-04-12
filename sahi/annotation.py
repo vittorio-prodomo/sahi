@@ -238,6 +238,10 @@ class Mask:
         else:
             self.segmentation = segmentation
         self._bool_mask: np.ndarray | None = None
+        # Tile-local mask: stored at tile resolution with shift info, expanded
+        # lazily to full-image only when bool_mask is accessed. Avoids
+        # materializing huge full-image masks for every prediction.
+        self._tile_mask: np.ndarray | None = None
 
     @classmethod
     def from_float_mask(
@@ -298,10 +302,35 @@ class Mask:
         return mask
 
     @property
+    def tile_mask(self) -> np.ndarray | None:
+        """Return tile-local boolean mask if available, without expanding."""
+        return self._tile_mask
+
+    @property
     def bool_mask(self) -> np.ndarray:
-        """Return boolean mask representation."""
+        """Return boolean mask in full-image coordinates.
+
+        If a tile-local mask is cached, expands it lazily by placing it
+        at the correct shift offset on a full-image canvas. Otherwise
+        falls back to rasterizing from polygon segmentation.
+        """
         if self._bool_mask is not None:
             return self._bool_mask
+        if self._tile_mask is not None:
+            # Expand tile-local mask to full image
+            full = np.zeros(
+                (self.full_shape_height, self.full_shape_width), dtype=bool,
+            )
+            th, tw = self._tile_mask.shape[:2]
+            y0 = self.shift_y
+            x0 = self.shift_x
+            # Clip to image bounds
+            y1 = min(y0 + th, self.full_shape_height)
+            x1 = min(x0 + tw, self.full_shape_width)
+            tile_h = y1 - y0
+            tile_w = x1 - x0
+            full[y0:y1, x0:x1] = self._tile_mask[:tile_h, :tile_w]
+            return full
         # Ensure segmentation is list[list[float]] for the utility function
         seg = self.segmentation
         if isinstance(seg, np.ndarray):

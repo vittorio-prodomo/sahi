@@ -352,10 +352,12 @@ class RoboflowDetectionModel(DetectionModel):
                     original_detection.class_id,
                 ):
                     segmentation = None
+                    tile_mask = None
                     if mask is not None:
                         segmentation = get_coco_segmentation_from_bool_mask(mask)
                         if not segmentation or len(segmentation) == 0:
                             continue  # skip degenerate masks
+                        tile_mask = mask.astype(bool)
 
                     try:
                         object_prediction = ObjectPrediction(
@@ -369,6 +371,11 @@ class RoboflowDetectionModel(DetectionModel):
                         )
                     except ValueError:
                         continue  # skip invalid predictions (e.g. degenerate masks)
+
+                    # Store tile-local dense mask for lazy expansion
+                    if tile_mask is not None and object_prediction.mask is not None:
+                        object_prediction.mask._tile_mask = tile_mask
+
                     image_predictions.append(object_prediction)
                 object_prediction_list_per_image.append(image_predictions)
 
