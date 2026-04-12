@@ -199,7 +199,12 @@ class RoboflowDetectionModel(DetectionModel):
         if self._use_universe:
             self._original_predictions = self.model.infer(image, confidence=self.confidence_threshold)
         else:
-            self._original_predictions = [self.model.predict(image, threshold=self.confidence_threshold)]
+            # If JIT-compiled with fixed batch size, route through batch path
+            compiled_bs = getattr(self.model, "_optimized_batch_size", None)
+            if compiled_bs:
+                self.perform_batch_inference([image])
+            else:
+                self._original_predictions = [self.model.predict(image, threshold=self.confidence_threshold)]
 
     def perform_batch_inference(self, images: list[np.ndarray]) -> None:
         """Run inference on a batch of images using native RF-DETR batch support.
