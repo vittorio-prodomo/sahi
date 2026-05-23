@@ -183,3 +183,6 @@ requirements.txt
 requirements-dev.txt
 requirements/requirements-style.txt
 requirements/*.txt
+
+# Claude Code personal config (per-machine, never team-shared)
+.claude/settings.local.json
